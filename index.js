@@ -8,6 +8,24 @@ const app = express()
 
 const VIDEOS_PATH = process.env.VIDEOS_PATH || 'E:/VideoServer'
 const PORT = process.env.PORT || 3017
+const activeMkvStreams = new Map()
+
+const stopProcess = (childProcess) => {
+    if (!childProcess || childProcess.killed) return
+
+    if (process.platform === 'win32') {
+        execFile('taskkill', ['/pid', String(childProcess.pid), '/T', '/F'], () => {})
+    } else {
+        childProcess.kill('SIGKILL')
+    }
+}
+
+const getStreamKey = (req, filename) => {
+    const forwardedFor = req.headers['x-forwarded-for']
+    const clientIp = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor || req.ip
+
+    return `${clientIp}:${filename}`
+}
 
 app.get('/mp4/:filename', cors(), (req, res) => {
     const filename = req.params.filename;
@@ -56,8 +74,16 @@ app.get('/mkv/:filename', cors(), (req, res) => {
 
     const audio = Number(req.query.audio || 1)
     const subtitle = req.query.subtitle !== undefined ? Number(req.query.subtitle) : -1
+    const streamKey = getStreamKey(req, filename)
+    const previousStream = activeMkvStreams.get(streamKey)
+
+    if (previousStream) {
+        stopProcess(previousStream)
+        activeMkvStreams.delete(streamKey)
+    }
 
     const args = [
+        '-nostdin',
         '-i', filePath,
         '-map', '0:v:0',
         '-map', `0:${audio}`,
@@ -67,8 +93,8 @@ app.get('/mkv/:filename', cors(), (req, res) => {
     ]
 
     if (subtitle >= 0) {
-        const safePath = filePath.replace(/\\/g, '/').replace(/:/g, '\\:')
-        args.push('-vf', `subtitles='${safePath}':si=0`, '-c:v', 'libx264', '-preset', 'veryfast')
+        const safePath = filePath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'")
+        args.push('-vf', `subtitles='${safePath}':si=${subtitle}`, '-c:v', 'libx264', '-preset', 'veryfast')
     } else {
         args.push('-c:v', 'copy')
     }
@@ -81,9 +107,33 @@ app.get('/mkv/:filename', cors(), (req, res) => {
     })
 
     const ffmpeg = spawn('ffmpeg', args)
+    let closed = false
+
+    activeMkvStreams.set(streamKey, ffmpeg)
+
+    const cleanup = () => {
+        if (activeMkvStreams.get(streamKey) === ffmpeg) {
+            activeMkvStreams.delete(streamKey)
+        }
+    }
+
+    const closeStream = () => {
+        if (closed) return
+        closed = true
+        cleanup()
+        stopProcess(ffmpeg)
+    }
+
     ffmpeg.stdout.pipe(res)
     ffmpeg.stderr.on('data', (data) => console.error(data.toString()))
-    res.on('close', () => ffmpeg.kill('SIGKILL'))
+    ffmpeg.on('error', (error) => {
+        console.error(error)
+        closeStream()
+    })
+    ffmpeg.on('close', cleanup)
+    req.on('aborted', closeStream)
+    res.on('close', closeStream)
+    res.on('error', closeStream)
 })
 
 app.get('/files', cors(), (req, res) => {
