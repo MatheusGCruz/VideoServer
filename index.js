@@ -1,8 +1,6 @@
 const express = require('express')
 const fs = require('fs')
 const cors = require('cors')
-const { execFile } = require('child_process')
-const path = require('path')
 
 const app = express()
 
@@ -89,49 +87,6 @@ app.get('/files', cors(), (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With');
     return res.send(files);
-})
-
-app.get('/tracks/:filename', cors(), (req, res) => {
-    const filename = path.basename(req.params.filename)
-    const filePath = path.join(VIDEOS_PATH, filename)
-
-    if (!filename || filename === 'null') {
-        return res.status(404).json({ audio: [], subtitles: [] })
-    }
-
-    execFile('ffprobe', [
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_streams',
-        filePath
-    ], (error, stdout) => {
-        if (error) return res.status(500).json({ audio: [], subtitles: [] })
-
-        let streams = []
-
-        try {
-            streams = JSON.parse(stdout).streams || []
-        } catch {
-            return res.status(500).json({ audio: [], subtitles: [] })
-        }
-
-        res.json({
-            audio: streams
-                .filter((s) => s.codec_type === 'audio')
-                .map((s, i) => ({
-                    index: s.index,
-                    label: s.tags?.title || s.tags?.language || `Audio ${i + 1}`,
-                    language: s.tags?.language
-                })),
-            subtitles: streams
-                .filter((s) => s.codec_type === 'subtitle')
-                .map((s, i) => ({
-                    index: s.index,
-                    label: s.tags?.title || s.tags?.language || `Subtitle ${i + 1}`,
-                    language: s.tags?.language
-                }))
-        })
-    })
 })
 
 app.listen(PORT, () => {
