@@ -5,7 +5,7 @@ const cors = require('cors')
 const app = express()
 
 const VIDEOS_PATH = process.env.VIDEOS_PATH || 'E:/VideoServer'
-const PORT = process.env.PORT || 3018
+const PORT = process.env.PORT || 3017
 
 app.get('/mp4/:filename', cors(), (req, res) => {
     const filename = req.params.filename;
