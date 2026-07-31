@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    container_name: videoserver-app
+    ports:
+      - "${PORT:-3018}:3018"
+    environment:
+      - VIDEOS_PATH=${VIDEOS_PATH:-/data/videos}
+    volumes:
+      - E:/VideoServer/:/data/videos
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
