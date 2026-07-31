@@ -9,6 +9,7 @@ RUN npm ci --only=production
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN apk add --no-cache ffmpeg
 
 EXPOSE 3017
 
