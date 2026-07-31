@@ -1,7 +1,7 @@
 const express = require('express')
 const fs = require('fs')
 const cors = require('cors')
-const { execFile } = require('child_process')
+const { execFile, spawn } = require('child_process')
 const path = require('path')
 
 const app = express()
@@ -47,40 +47,43 @@ app.get('/mp4/:filename', cors(), (req, res) => {
 })
 
 app.get('/mkv/:filename', cors(), (req, res) => {
-    const filename = req.params.filename;
-    const filePath = VIDEOS_PATH + "/" + filename;
+    const filename = path.basename(req.params.filename)
+    const filePath = path.join(VIDEOS_PATH, filename)
+
     if (!filename || filename === 'null') {
         return res.status(404).send('Not Found')
     }
 
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
+    const audio = Number(req.query.audio || 1)
+    const subtitle = req.query.subtitle !== undefined ? Number(req.query.subtitle) : -1
 
-    if (range) {
-        const parts = range.replace(/bytes=/, '').split('-')
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const args = [
+        '-i', filePath,
+        '-map', '0:v:0',
+        '-map', `0:${audio}`,
+        '-c:a', 'aac',
+        '-movflags', 'frag_keyframe+empty_moov',
+        '-f', 'mp4'
+    ]
 
-        const chunkSize = end - start + 1;
-        const file = fs.createReadStream(filePath, { start, end });
-        const head = {
-            'Content-Range': 'bytes ' + start + '-' + end + '/' + fileSize,
-            'Accept-Ranges': 'bytes',
-            'Content-Length': chunkSize,
-            'Content-Type': 'video/x-matroska'
-        }
-        res.writeHead(206, head);
-        file.pipe(res);
+    if (subtitle >= 0) {
+        const safePath = filePath.replace(/\\/g, '/').replace(/:/g, '\\:')
+        args.push('-vf', `subtitles='${safePath}':si=0`, '-c:v', 'libx264', '-preset', 'veryfast')
+    } else {
+        args.push('-c:v', 'copy')
     }
-    else {
-        const head = {
-            'Content-Length': fileSize,
-            'Content-Type': 'video/x-matroska'
-        };
-        res.writeHead(200, head);
-        fs.createReadStream(filePath).pipe(res);
-    }
+
+    args.push('pipe:1')
+
+    res.writeHead(200, {
+        'Content-Type': 'video/mp4',
+        'Access-Control-Allow-Origin': '*'
+    })
+
+    const ffmpeg = spawn('ffmpeg', args)
+    ffmpeg.stdout.pipe(res)
+    ffmpeg.stderr.on('data', (data) => console.error(data.toString()))
+    res.on('close', () => ffmpeg.kill('SIGKILL'))
 })
 
 app.get('/files', cors(), (req, res) => {
