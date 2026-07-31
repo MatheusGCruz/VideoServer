@@ -3,7 +3,7 @@ services:
     build: .
     container_name: videoserver-app
     ports:
-      - "${PORT:-3018}:3018"
+      - "${PORT:-3017}:3017"
     environment:
       - VIDEOS_PATH=${VIDEOS_PATH:-/data/videos}
     volumes:

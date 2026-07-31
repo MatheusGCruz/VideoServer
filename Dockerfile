@@ -10,6 +10,6 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-EXPOSE 3018
+EXPOSE 3017
 
 CMD ["node", "index.js"]
